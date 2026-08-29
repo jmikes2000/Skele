@@ -1,0 +1,127 @@
+#pragma METAINFO("2K GPC", 1, 0, "vsqn")
+
+#include <PS4.gph>
+
+#define PHASE2_MS      300
+#define TEMPO_DEFAULT 45
+#define HOLD_DELAY_MS 50   // Required time to hold past deadzone
+
+uint8  range_active;
+uint8  rd;
+uint8  rs_active;
+int8   gcv_fired;
+uint16 tempo_ms;
+uint8  shot_mode;
+uint8  stamina_on;
+
+// New variables for the 50ms hold confirmation
+uint32 hold_timer;
+uint8  stick_confirmed;
+
+main {
+    int16 ry_val;
+    int16 lx_scaled;
+    int16 ly_scaled;
+    
+    range_active = 0;
+    tempo_ms = TEMPO_DEFAULT;
+
+    // Direction tracking
+    ry_val = (int16)get_val(PS4_RY);
+    if (ry_val != 0) {
+        if ((abs(ry_val) + ry_val) != 0) {
+            rd = 1;
+        } else {
+            rd = 0;
+        }
+    }
+
+    // --- Stick Hold Confirmation Logic ---
+    // Check if the stick is pushed past the 90 or -90 threshold
+    if (abs((int)ry_val) >= 90) {
+        // Increment the timer by the elapsed time of the current iteration
+        hold_timer += elapsed_time();
+        if (hold_timer >= HOLD_DELAY_MS) {
+            stick_confirmed = 1; // 50ms hold achieved!
+        }
+    } else {
+        // Reset if they let go or don't push hard enough
+        hold_timer = 0;
+        stick_confirmed = 0;
+    }
+
+    // Triggers will only process if the stick confirmation is met
+    if (gcv_ready() && stick_confirmed) {
+        gcv_fired = (int8)gcv_read(0);
+        uint8 gcv_tempo = (uint8)gcv_read(1);
+        if (gcv_tempo > 0) {
+            tempo_ms = (uint16)min(100, max(1, gcv_tempo));
+        }
+        shot_mode  = (uint8)gcv_read(2);
+        stamina_on = (uint8)gcv_read(3);
+
+        if (gcv_fired) {
+            range_active = 1;
+            
+            if (shot_mode == 0) {
+                if (rd) combo_run(cEV_Shot_Up); else combo_run(cEV_Shot_Down);
+            }
+            else if (shot_mode == 1) {
+                if (rd) combo_run(cButton_Up); else combo_run(cButton_Down);
+            }
+            else if (shot_mode == 2) {
+                combo_run(cStick_Center);
+            }
+            else if (shot_mode == 3) {
+                if (get_val(PS4_R2)) combo_run(cEV_Shot_Down_Straight); else combo_run(cEV_Shot_Up_Straight);
+            }
+        }
+    }
+
+    // Manual Hold Logic for Mode 3
+    if (shot_mode == 3 && get_val(PS4_SQUARE)) {
+        if (!cEV_Shot_Up_Straight && !cEV_Shot_Down_Straight) {
+            set_val(PS4_SQUARE, 0); 
+            if (get_val(PS4_R2)) {
+                set_val(PS4_RY, -100);
+            } else {
+                set_val(PS4_RY, 100);
+            }
+        }
+    }
+
+    // Legacy Mode Logic
+    if (!range_active && shot_mode != 3) {
+        if (get_val(PS4_RY)) {
+            rs_active = 1;
+        } else if (rs_active) {
+            rs_active = 0;
+            if (shot_mode == 0) { if (rd) combo_run(cEV_Shot_Up); else combo_run(cEV_Shot_Down); }
+            else if (shot_mode == 1) { if (rd) combo_run(cButton_Up); else combo_run(cButton_Down); }
+            else if (shot_mode == 2) { combo_run(cStick_Center); }
+        }
+    }
+
+    // --- Final Gatekeeper: Infinite Stamina ---
+    if (abs((int)get_val(PS4_RY)) > 90) {
+        // Bypass active: No scaling applied.
+    } else if (stamina_on) {
+        lx_scaled = (int16)get_val(PS4_LX) * 70 / 100;
+        set_val(PS4_LX, (int8)lx_scaled);
+        
+        ly_scaled = (int16)get_val(PS4_LY) * 70 / 100;
+        set_val(PS4_LY, (int8)ly_scaled);
+    }
+}
+
+// --- Combos ---
+combo cEV_Shot_Up { set_val(PS4_RY, -50); wait(tempo_ms); set_val(PS4_RY, -100); wait(PHASE2_MS); set_val(PS4_RY, 0); }
+combo cEV_Shot_Down { set_val(PS4_RY, 50); wait(tempo_ms); set_val(PS4_RY, 100); wait(PHASE2_MS); set_val(PS4_RY, 0); }
+
+combo cButton_Up { set_val(PS4_SQUARE, 0); wait(100); }
+combo cButton_Down { set_val(PS4_SQUARE, 0); wait(100); }
+combo cStick_Center { set_val(PS4_RX, 0); set_val(PS4_RY, 0); wait(100); }
+
+// Mode 3 Combos
+combo cEV_Shot_Up_Straight { set_val(PS4_RY, -50); wait(tempo_ms); set_val(PS4_RY, -100); wait(PHASE2_MS); set_val(PS4_RY, 0); }
+combo cEV_Shot_Down_Straight { set_val(PS4_RY, 50); wait(tempo_ms); set_val(PS4_RY, 100); wait(PHASE2_MS); set_val(PS4_RY, 0); }

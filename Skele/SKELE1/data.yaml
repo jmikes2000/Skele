@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 2
+names: ['ball', 'stamina']
+
+roboflow:
+  workspace: robloxs-workspace-jt3v4
+  project: model2010
+  version: dataset
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/robloxs-workspace-jt3v4/model2010/dataset/dataset
